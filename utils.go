@@ -1,9 +1,6 @@
 package negentropy
 
 import (
-	"fmt"
-	"math"
-
 	"golang.org/x/exp/slices"
 )
 
@@ -65,51 +62,6 @@ func encodeVarInt(value int) []byte {
 	}
 
 	return o
-}
-
-func encodeTimestampOut(timestamp uint64, state *State) []byte {
-	if timestamp == ^uint64(0)>>1 {
-		state.lastTimestampOut = ^uint64(0) >> 1
-		return encodeVarInt(0)
-	}
-
-	temp := timestamp
-	timestamp -= state.lastTimestampOut
-	state.lastTimestampOut = temp
-	return encodeVarInt(int(timestamp) + 1)
-}
-
-func encodeItem(key Item, state *State) []byte {
-	output := make([]byte, 0, 300)
-	output = append(output, encodeTimestampOut(key.timestamp, state)...)
-	output = append(output, encodeVarInt(len(key.id))...)
-	output = append(output, key.id[:]...)
-
-	return output
-}
-
-func decodeTimestampIn(encoded *[]byte, state *State) uint64 {
-	timestamp := uint64(decodeVarInt(encoded))
-	timestamp = timestamp - 1
-	if state.lastTimestampIn == math.MaxUint64 {
-		state.lastTimestampIn = math.MaxUint64
-		return math.MaxUint64
-	}
-	timestamp += state.lastTimestampIn
-	state.lastTimestampIn = timestamp
-	return timestamp
-}
-
-func decodeItem(encoded *[]byte, state *State) Item {
-	timestamp := decodeTimestampIn(encoded, state)
-	length := decodeVarInt(encoded)
-	if length > ID_SIZE {
-		panic(fmt.Errorf("item key too long"))
-	}
-	id := getBytes(encoded, length)
-	var idArr [ID_SIZE]byte
-	copy(idArr[:], id)
-	return Item{timestamp: timestamp, id: idArr}
 }
 
 func getMinimalItem(prev, curr Item) Item {
