@@ -16,9 +16,14 @@ type Negentropy struct {
 	isInitiator      bool
 }
 
-func NewNegentropy(storage *NegentropyStorageVector, frameSizeLimit uint) *Negentropy {
+func NewNegentropy(frameSizeLimit uint) *Negentropy {
 	if frameSizeLimit != 0 && frameSizeLimit < 4096 {
 		panic(errors.New("frameSizeLimit too small"))
+	}
+
+	storage := &NegentropyStorageVector{
+		items:  make([]Item, 0, 36),
+		sealed: false,
 	}
 
 	return &Negentropy{
@@ -30,7 +35,7 @@ func NewNegentropy(storage *NegentropyStorageVector, frameSizeLimit uint) *Negen
 	}
 }
 
-func (ngtp *Negentropy) initiate() ([]byte, error) {
+func (ngtp *Negentropy) Initiate() ([]byte, error) {
 	if ngtp.isInitiator {
 		return nil, errors.New("already initiated")
 	}
@@ -43,9 +48,7 @@ func (ngtp *Negentropy) initiate() ([]byte, error) {
 	return output, nil
 }
 
-func (ngtp *Negentropy) reconcile(query []byte) ([]byte, []string, []string, error) {
-	var haveIds []string
-	var needIds []string
+func (ngtp *Negentropy) Reconcile(query []byte) (output []byte, haveIds, needIds [][ID_SIZE]byte, err error) {
 	fullOutput := make([]byte, 0, 120)
 	fullOutput = append(fullOutput, PROTOCOL_VERSION)
 
@@ -100,7 +103,7 @@ func (ngtp *Negentropy) reconcile(query []byte) ([]byte, []string, []string, err
 		} else if mode == ModeIdList {
 			numIds := decodeVarInt(&queryBuf)
 
-			theirElems := make(map[string][]byte) // stringified Uint8Array -> original Uint8Array (or hex)
+			theirElems := make(map[string][]byte)
 			for i := 0; i < numIds; i++ {
 				e := getBytes(&queryBuf, ID_SIZE)
 				theirElems[string(e)] = e
@@ -112,7 +115,7 @@ func (ngtp *Negentropy) reconcile(query []byte) ([]byte, []string, []string, err
 				if _, ok := theirElems[string(k)]; !ok {
 					// ID exists on our side, but not their side
 					if ngtp.isInitiator {
-						haveIds = append(haveIds, string(k))
+						haveIds = append(haveIds, asStaticArray(k))
 					}
 				} else {
 					// ID exists on both sides
@@ -127,7 +130,7 @@ func (ngtp *Negentropy) reconcile(query []byte) ([]byte, []string, []string, err
 
 				for _, v := range theirElems {
 					// ID exists on their side, but not our side
-					needIds = append(needIds, string(v))
+					needIds = append(needIds, asStaticArray(v))
 				}
 			} else {
 				doSkip()
@@ -152,7 +155,6 @@ func (ngtp *Negentropy) reconcile(query []byte) ([]byte, []string, []string, err
 				o = append(o, encodeVarInt(int(ModeIdList))...)
 				o = append(o, encodeVarInt(numResponseIds)...)
 				o = append(o, responseIds...)
-
 				fullOutput = append(fullOutput, o...)
 			}
 		} else {
@@ -222,6 +224,9 @@ func (ngtp *Negentropy) splitRange(lower int, upper int, upperBound Item, o *[]b
 }
 
 func (ngtp *Negentropy) exceededFrameSizeLimit(n int) bool {
+	if ngtp.frameSizeLimit == 0 {
+		return false
+	}
 	return uint(n) > ngtp.frameSizeLimit-200
 }
 

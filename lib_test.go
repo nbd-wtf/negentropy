@@ -5,6 +5,6 @@ import (
 	"testing"
 )
 
-func TestSomething(t *testing.T) {
+func TestIfItRuns(t *testing.T) {
 	fmt.Println("hello?")
 }

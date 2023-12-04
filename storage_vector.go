@@ -12,13 +12,6 @@ type NegentropyStorageVector struct {
 	sealed bool
 }
 
-func NewNegentropyStorageVector() *NegentropyStorageVector {
-	return &NegentropyStorageVector{
-		items:  make([]Item, 0, 36),
-		sealed: false,
-	}
-}
-
 func (nsv *NegentropyStorageVector) Insert(timestamp uint32, id []byte) {
 	if nsv.sealed {
 		panic(errors.New("already sealed"))
