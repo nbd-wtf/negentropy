@@ -1,7 +1,6 @@
 package negentropy
 
 import (
-	"errors"
 	"fmt"
 	"math"
 
@@ -9,7 +8,7 @@ import (
 )
 
 type Negentropy struct {
-	storage          *NegentropyStorageVector
+	Storage          *NegentropyStorageVector
 	frameSizeLimit   uint
 	lastTimestampIn  uint32
 	lastTimestampOut uint32
@@ -18,7 +17,7 @@ type Negentropy struct {
 
 func NewNegentropy(frameSizeLimit uint) *Negentropy {
 	if frameSizeLimit != 0 && frameSizeLimit < 4096 {
-		panic(errors.New("frameSizeLimit too small"))
+		panic(fmt.Errorf("frameSizeLimit too small"))
 	}
 
 	storage := &NegentropyStorageVector{
@@ -27,7 +26,7 @@ func NewNegentropy(frameSizeLimit uint) *Negentropy {
 	}
 
 	return &Negentropy{
-		storage:          storage,
+		Storage:          storage,
 		frameSizeLimit:   frameSizeLimit,
 		lastTimestampIn:  0,
 		lastTimestampOut: 0,
@@ -37,13 +36,13 @@ func NewNegentropy(frameSizeLimit uint) *Negentropy {
 
 func (ngtp *Negentropy) Initiate() ([]byte, error) {
 	if ngtp.isInitiator {
-		return nil, errors.New("already initiated")
+		return nil, fmt.Errorf("already initiated")
 	}
 	ngtp.isInitiator = true
 
 	output := make([]byte, 0, 120)
 	output = append(output, PROTOCOL_VERSION)
-	ngtp.splitRange(0, ngtp.storage.Size(), Item{timestamp: ^uint32(0) >> 1}, &output)
+	ngtp.splitRange(0, ngtp.Storage.Size(), Item{timestamp: ^uint32(0) >> 1}, &output)
 
 	return output, nil
 }
@@ -52,22 +51,22 @@ func (ngtp *Negentropy) Reconcile(query []byte) (output []byte, haveIds, needIds
 	fullOutput := make([]byte, 0, 120)
 	fullOutput = append(fullOutput, PROTOCOL_VERSION)
 
-	queryBuf := make([]byte, len(query), 120)
+	queryBuf := make([]byte, len(query))
 	copy(queryBuf, query)
 
 	protocolVersion := arrayShift(&queryBuf)
 	if protocolVersion < 0x60 || protocolVersion > 0x6F {
-		return nil, nil, nil, errors.New("invalid negentropy protocol version byte")
+		return nil, nil, nil, fmt.Errorf("invalid negentropy protocol version byte: %d", protocolVersion)
 	}
 	if protocolVersion != PROTOCOL_VERSION {
 		if ngtp.isInitiator {
-			return fullOutput, haveIds, needIds, errors.New("unsupported negentropy protocol version requested: " + string(rune(protocolVersion-0x60)))
+			return fullOutput, haveIds, needIds, fmt.Errorf("unsupported negentropy protocol version requested: " + string(rune(protocolVersion-0x60)))
 		} else {
 			return fullOutput, haveIds, needIds, nil
 		}
 	}
 
-	storageSize := ngtp.storage.Size()
+	storageSize := ngtp.Storage.Size()
 	prevBound := Item{timestamp: 0}
 	prevIndex := 0
 	skip := false
@@ -86,13 +85,13 @@ func (ngtp *Negentropy) Reconcile(query []byte) (output []byte, haveIds, needIds
 		mode := Mode(decodeVarInt(&queryBuf))
 
 		lower := prevIndex
-		upper := ngtp.storage.FindLowerBound(prevIndex, storageSize, currBound)
+		upper := ngtp.Storage.FindLowerBound(prevIndex, storageSize, currBound)
 
 		if mode == ModeSkip {
 			skip = true
 		} else if mode == ModeFingerprint {
 			theirFingerprint := getBytes(&queryBuf, FINGERPRINT_SIZE)
-			ourFingerprint := ngtp.storage.Fingerprint(lower, upper)
+			ourFingerprint := ngtp.Storage.Fingerprint(lower, upper)
 
 			if slices.Compare(theirFingerprint, ourFingerprint) != 0 {
 				doSkip()
@@ -109,7 +108,7 @@ func (ngtp *Negentropy) Reconcile(query []byte) (output []byte, haveIds, needIds
 				theirElems[string(e)] = e
 			}
 
-			ngtp.storage.Iterate(lower, upper, func(item Item) bool {
+			ngtp.Storage.Iterate(lower, upper, func(item Item) bool {
 				k := item.id[:]
 
 				if _, ok := theirElems[string(k)]; !ok {
@@ -139,7 +138,7 @@ func (ngtp *Negentropy) Reconcile(query []byte) (output []byte, haveIds, needIds
 				numResponseIds := 0
 				endBound := currBound
 
-				ngtp.storage.Iterate(lower, upper, func(item Item) bool {
+				ngtp.Storage.Iterate(lower, upper, func(item Item) bool {
 					if ngtp.exceededFrameSizeLimit(len(fullOutput) + len(responseIds)) {
 						endBound = Item{timestamp: item.timestamp, id: item.id}
 						upper = prevIndex // shrink upper so that the remaining range gets the correct fingerprint
@@ -158,12 +157,11 @@ func (ngtp *Negentropy) Reconcile(query []byte) (output []byte, haveIds, needIds
 				fullOutput = append(fullOutput, o...)
 			}
 		} else {
-			return fullOutput, haveIds, needIds, errors.New("unexpected mode")
+			return fullOutput, haveIds, needIds, fmt.Errorf("unexpected mode")
 		}
 
 		if ngtp.exceededFrameSizeLimit(len(fullOutput) + len(o)) {
-			// frameSizeLimit exceeded: Stop range processing and return a fingerprint for the remaining range
-			remainingFingerprint := ngtp.storage.Fingerprint(upper, storageSize)
+			remainingFingerprint := ngtp.Storage.Fingerprint(upper, storageSize)
 			fullOutput = append(fullOutput, ngtp.encodeItem(Item{timestamp: ^uint32(0) >> 1})...)
 			fullOutput = append(fullOutput, encodeVarInt(int(ModeFingerprint))...)
 			fullOutput = append(fullOutput, remainingFingerprint...)
@@ -193,7 +191,7 @@ func (ngtp *Negentropy) splitRange(lower int, upper int, upperBound Item, o *[]b
 		buf = append(buf, encodeVarInt(ModeIdList)...)
 		buf = append(buf, encodeVarInt(numElems)...)
 
-		ngtp.storage.Iterate(lower, upper, func(item Item) bool {
+		ngtp.Storage.Iterate(lower, upper, func(item Item) bool {
 			buf = append(buf, item.id[:]...)
 			return true
 		})
@@ -208,12 +206,12 @@ func (ngtp *Negentropy) splitRange(lower int, upper int, upperBound Item, o *[]b
 				bucketSize++
 			}
 
-			ourFingerprint := ngtp.storage.Fingerprint(curr, curr+bucketSize)
+			ourFingerprint := ngtp.Storage.Fingerprint(curr, curr+bucketSize)
 			curr += bucketSize
 
 			nextBound := upperBound
 			if curr != upper {
-				nextBound = getMinimalItem(ngtp.storage.GetItem(curr-1), ngtp.storage.GetItem(curr))
+				nextBound = getMinimalItem(ngtp.Storage.GetItem(curr-1), ngtp.Storage.GetItem(curr))
 			}
 
 			buf = append(buf, ngtp.encodeItem(nextBound)...)

@@ -1,7 +1,6 @@
 package negentropy
 
 import (
-	"errors"
 	"fmt"
 
 	"golang.org/x/exp/slices"
@@ -12,19 +11,16 @@ type NegentropyStorageVector struct {
 	sealed bool
 }
 
-func (nsv *NegentropyStorageVector) Insert(timestamp uint32, id []byte) {
+func (nsv *NegentropyStorageVector) Insert(timestamp uint32, id [ID_SIZE]byte) {
 	if nsv.sealed {
-		panic(errors.New("already sealed"))
+		panic(fmt.Errorf("already sealed"))
 	}
-	if len(id) != ID_SIZE {
-		panic(errors.New("bad id size for added Item"))
-	}
-	nsv.items = append(nsv.items, Item{timestamp: timestamp, id: asStaticArray(id)})
+	nsv.items = append(nsv.items, Item{timestamp: timestamp, id: id})
 }
 
 func (nsv *NegentropyStorageVector) Seal() {
 	if nsv.sealed {
-		panic(errors.New("already sealed"))
+		panic(fmt.Errorf("already sealed"))
 	}
 	nsv.sealed = true
 
@@ -36,7 +32,7 @@ func (nsv *NegentropyStorageVector) Seal() {
 	})
 	for i := 1; i < len(nsv.items); i++ {
 		if itemCompare(nsv.items[i-1], nsv.items[i]) == 0 {
-			panic(errors.New("duplicate Item inserted"))
+			panic(fmt.Errorf("duplicate Item inserted"))
 		}
 	}
 }
@@ -52,9 +48,6 @@ func (nsv *NegentropyStorageVector) Size() int {
 
 func (nsv *NegentropyStorageVector) GetItem(i int) Item {
 	nsv.checkSealed()
-	if i >= len(nsv.items) {
-		panic(errors.New("out of range"))
-	}
 	return nsv.items[i]
 }
 
@@ -95,12 +88,12 @@ func (nsv *NegentropyStorageVector) Fingerprint(begin, end int) []byte {
 
 func (nsv *NegentropyStorageVector) checkSealed() {
 	if !nsv.sealed {
-		panic(errors.New("not sealed"))
+		panic(fmt.Errorf("not sealed"))
 	}
 }
 
 func (nsv *NegentropyStorageVector) checkBounds(begin, end int) {
 	if begin > end || end > len(nsv.items) {
-		panic(errors.New("bad range"))
+		panic(fmt.Errorf("bad range: %d > %d || %d > %d", begin, end, end, len(nsv.items)))
 	}
 }
