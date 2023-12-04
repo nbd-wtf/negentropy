@@ -12,13 +12,15 @@ func itemCompare(a, b Item) int {
 }
 
 func arrayShift(buf *[]byte) byte {
+	v := (*buf)[0]
 	*buf = (*buf)[1:]
-	return (*buf)[0]
+	return v
 }
 
 func arrayShiftN(buf *[]byte, n int) []byte {
+	v := (*buf)[0:n]
 	*buf = (*buf)[n:]
-	return (*buf)[0:n]
+	return v
 }
 
 func getBytes(buf *[]byte, n int) []byte {
